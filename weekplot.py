@@ -3,10 +3,22 @@ import sys
 import yaml
 from math import ceil
 import matplotlib.pyplot as plt
-from namedlist import namedlist
+from dataclasses import dataclass
+import numpy as np
 
 DAYS = ['Monday','Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-Event = namedlist('Event', 'name, days, startH, startM, endH, endM, color')
+
+@dataclass
+class Event:
+    name: str 
+    days: int # note: in my modified version it's intended that each event happens ONLY IN ONE DAY (for my z3 timetable scheduling project)
+    startH: int
+    startM: int 
+    endH: int 
+    endM: int 
+    color: int
+    overlap: int # integer which indicates "with how many other events does this overlap?". To be given "a priori"
+    pos: int # position (the i-th partition in case it shares with other events). ex: an event is shared with other 3 in the same timeslot, so the bar is divided into three horizontal parts. pos indicates which horizontal part it takes
 
 def getDay(prefix):
     for d in DAYS:
@@ -35,13 +47,13 @@ def parseYml(filename):
             latest = eh + 1 if eh > latest else latest
     return events, earliest, latest + 1
 
-def parseTxt(lines):
-    with open(sys.argv[1]) as fp:
+def parseTxt(fname):
+    with open(fname) as fp:
         lines = fp.readlines()
     index = 0
     latest = 0
     earliest = 24
-    events = [Event('', '', '', '', '', '', '')]
+    events = [Event('', '', '', '', '', '', '', '', '')]
     for line in lines:
         line = line.rstrip()
         index += 1
@@ -61,34 +73,52 @@ def parseTxt(lines):
             latest = events[-1].endH + 1 if events[-1].endH > latest else latest
         elif index == 4:
             events[-1].color = line
-        elif index == 5 and line == '':
-            events.append(Event('', '', '', '', '', '', ''))
+        elif index == 5:
+            events[-1].overlap = int(line) 
+        elif index == 6:
+            events[-1].pos = int(line)
+        elif index == 7 and line == '':
+            events.append(Event('', '', '', '', '', '', '', '', ''))
             index = 0
         else:
             raise UserWarning("Invalid text input format.")
     return events, earliest, latest + 1
 
-def plotEvent(e):
+def plotEvent(e, label_list):
     for day in e.days:
         d = DAYS.index(day) + 0.52
         start = float(e.startH) + float(e.startM) / 60
         end = float(e.endH) + float(e.endM) / 60
-        plt.fill_between([d, d + 0.96], [start, start], [end, end], color=e.color)
-        plt.text(d + 0.02, start + 0.02, '{0}:{1:0>2}'.format(e.startH, e.startM), va='top', fontsize=8)
-        plt.text(d + 0.48, (start + end) * 0.502, e.name, ha='center', va='center', fontsize=10)
+        A = np.linspace(d, d+0.96, e.overlap + 2)
 
-if __name__ == '__main__':
-    ext = sys.argv[1].split('.')[-1]
-    fig = plt.figure(figsize=(18, 9))
+        if e.name in label_list:
+            plt.fill_between([A[e.pos-1], A[e.pos]], [start, start], [end, end], color=e.color)
+        else:
+            plt.fill_between([A[e.pos-1], A[e.pos]], [start, start], [end, end], color=e.color, label=e.name)
+            label_list.append(e.name)
+        # plt.text(d + 0.02, start + 0.02, '{0}:{1:0>2}'.format(e.startH, e.startM), va='top', fontsize=8)
+        # plt.text(d + 0.48, (start + end) * 0.502, e.name, ha='center', va='center', fontsize=10)
+
+def plotSchedule(fname):
     try:
-        events, earliest, latest = parseTxt(sys.argv[1]) if ext == 'txt' else parseYml(sys.argv[1])
-        for e in events:
-            plotEvent(e)
-    except UserWarning as e:
-        print("ERROR:", str(e), file=sys.stderr)
-        sys.exit(1)
+        open(fname)
+    except:
+        raise Exception("FILE NOT FOUND")
+    
+    events, earliest, latest = parseTxt(fname)    
+    
+    overlaps = {}
+    for e in events:
+        overlaps
+    label_list = []
+    
+
+    fig, ax = plt.subplots(figsize=(18, 9))
+    for e in events:
+        plotEvent(e, label_list)
+
     plt.title('Weekly Schedule', y=1, fontsize=14)
-    ax=fig.add_subplot(1, 1, 1)
+
     ax.set_xlim(0.5, len(DAYS) + 0.5)
     ax.set_xticks(range(1, len(DAYS) + 1))
     ax.set_xticklabels(DAYS)
@@ -96,4 +126,8 @@ if __name__ == '__main__':
     ax.set_yticks(range(ceil(earliest), ceil(latest)))
     ax.set_yticklabels(["{0}:00".format(h) for h in range(ceil(earliest), ceil(latest))])
     ax.grid(axis='y', linestyle='--', linewidth=0.5)
-    plt.savefig('{0}.png'.format(os.path.splitext(sys.argv[1])[0]), dpi=200, bbox_inches='tight')
+
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.05),
+            fancybox=True, shadow=True, ncol=5)
+    
+    plt.show()
